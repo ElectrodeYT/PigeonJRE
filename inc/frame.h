@@ -1,14 +1,14 @@
 ﻿#pragma once
 
-#include <string>
-#include <vector>
 #include <cstdarg>
+#include <string>
 #include <variant>
+#include <vector>
 #include "class.h"
 
 struct Object {
-    Class* class_;
-    std::variant<int32_t, int64_t, uint32_t, uint64_t, float, double> value;
+  Class* class_;
+  std::variant<int32_t, int64_t, uint32_t, uint64_t, float, double> value;
 };
 
 // A Java frame.
@@ -18,80 +18,75 @@ struct Object {
 class Thread;
 
 class Frame {
-public:
-    struct StackEntry {
-        bool isObjectReference = false;
-        std::variant<int32_t, int64_t, float, double, Object*> value;
-        std::vector<Object*> value_list = {};
-    };
+ public:
+  struct StackEntry {
+    bool isObjectReference = false;
+    std::variant<int32_t, int64_t, float, double, Object*> value;
+    std::vector<Object*> value_list = {};
+  };
 
-    Frame(const Method m, Object* this_, std::vector<StackEntry> args, Thread* t) : method(m), thread(t) {
-        stack.reserve(method.code.max_stack);
-        locals.reserve(method.code.max_locals);
-        if(this_) {
-            StackEntry e;
-            e.isObjectReference = true;
-            e.value = this_;
-            locals.push_back(e);
-        }
-        locals.insert(locals.end(), args.begin(), args.end());
-        // Increase the size to max_locals
-        locals.resize(method.code.max_locals);
-        return_value = method.descriptor[method.descriptor.size() - 1];
+  Frame(const Method m, Object* this_, std::vector<StackEntry> args, Thread* t) : method(m), thread(t) {
+    stack.reserve(method.code.max_stack);
+    locals.reserve(method.code.max_locals);
+    if (this_) {
+      StackEntry e;
+      e.isObjectReference = true;
+      e.value = this_;
+      locals.push_back(e);
     }
+    locals.insert(locals.end(), args.begin(), args.end());
+    // Increase the size to max_locals
+    locals.resize(method.code.max_locals);
+    return_value = method.descriptor[method.descriptor.size() - 1];
+  }
 
-    std::variant<int32_t, int64_t, float, double, Object*> execute();
+  std::variant<int32_t, int64_t, float, double, Object*> execute();
 
-private:
+ private:
+  std::vector<StackEntry> stack;
+  std::vector<StackEntry> locals;
 
+  inline void push(StackEntry e) { stack.push_back(e); }
 
-    std::vector<StackEntry> stack;
-    std::vector<StackEntry> locals;
+  inline void push(int a) {
+    StackEntry e;
+    e.value = a;
+    stack.push_back(e);
+  }
 
-    inline void push(StackEntry e) {
-        stack.push_back(e);
-    }
+  inline void push(float f) {
+    StackEntry e;
+    e.value = (float)f;
+    stack.push_back(e);
+  }
 
-    inline void push(int a) {
-        StackEntry e;
-        e.value = a;
-        stack.push_back(e);
-    }
+  inline void push(Object* obj) {
+    StackEntry e;
+    e.value = obj;
+    e.isObjectReference = true;
+    stack.push_back(e);
+  }
 
-    inline void push(float f) {
-        StackEntry e;
-        e.value = (float)f;
-        stack.push_back(e);
-    }
+  inline StackEntry pop() {
+    StackEntry e = stack[stack.size() - 1];
+    stack.pop_back();
+    return e;
+  }
 
-    inline void push(Object* obj) {
-        StackEntry e;
-        e.value = obj;
-        e.isObjectReference = true;
-        stack.push_back(e);
-    }
+  inline int pop_i() {
+    StackEntry e = pop();
+    return std::get<int>(e.value);
+  }
 
-    inline StackEntry pop() {
-        StackEntry e = stack[stack.size() - 1];
-        stack.pop_back();
-        return e;
-    }
+  inline float pop_f() {
+    StackEntry e = pop();
+    return std::get<float>(e.value);
+  }
 
-    inline int pop_i() {
-        StackEntry e = pop();
-        return std::get<int>(e.value);
-    }
+  void dumpStack();
 
-    inline float pop_f() {
-        StackEntry e = pop();
-        return std::get<float>(e.value);
-    }
+  char return_value = 0;
 
-    void dumpStack();
-
-    char return_value = 0;
-
-    const Method method;
-    Thread *thread;
+  const Method method;
+  Thread* thread;
 };
-
