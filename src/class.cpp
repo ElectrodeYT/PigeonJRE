@@ -1,7 +1,7 @@
 #include <algorithm>
 
-#include "class.h"
-#include "frame.h"
+#include <class.h>
+#include <frame.h>
 
 Class::Class(std::string path) {
     // Setup fstream
@@ -258,7 +258,6 @@ std::vector<Method> Class::readMethods() {
             }
             m.code = code;
         }
-        if(!(m.access_flags & Method::AccessFlags::Abstract)) { pigeon_assert(has_code); }
         methods.push_back(m);
     }
     return methods;

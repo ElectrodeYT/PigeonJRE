@@ -1,5 +1,8 @@
-#include "frame.h"
-#include "jre.h"
+#include <cmath>
+#include <frame.h>
+#include <jre.h>
+#include <thread.h>
+
 
 std::variant<int32_t, int64_t, float, double, Object*> Frame::execute()  {
     size_t ip = 0;
@@ -26,18 +29,33 @@ std::variant<int32_t, int64_t, float, double, Object*> Frame::execute()  {
         case 0x07: push(4); break; // iconst_4
         case 0x08: push(5); break; // iconst_5
 
+        case 0x0b: push((float)0.0); break; // fconst_0
 
         // Loading stuff
-        case 0x1a: case 0x2a: push(locals[0]); break; // iload_0, aload_0
-        case 0x1b: case 0x2b: push(locals[1]); break; // iload_1, aload_1
-        case 0x1c: case 0x2c: push(locals[2]); break; // iload_2, aload_2
-        case 0x1d: case 0x2d: push(locals[3]); break; // iload_3, aload_3
+        case 0x1a: case 0x22: case 0x2a: push(locals[0]); break; // iload_0, aload_0
+        case 0x1b: case 0x23: case 0x2b: push(locals[1]); break; // iload_1, aload_1
+        case 0x1c: case 0x24: case 0x2c: push(locals[2]); break; // iload_2, aload_2
+        case 0x1d: case 0x25: case 0x2d: push(locals[3]); break; // iload_3, aload_3
 
+        case 0x12: { // ldc
+            uint8_t index = method.code.code[ip + 1];
+            ip++;
+            CPInfo entry = method.method_class->readCPEntry(index);
+            switch(entry.tag) {
+                case CPTag::Integer: push((int)entry.Integer); break;
+                case CPTag::Float: push((float)entry.Float); break;
+                default: {
+                    pigeon_log("Frame", "Unimplemtned LDC tag: " << entry.tag << ", entry " << (int)index);
+                    pigeon_panic("TODO: implement more ldc tags");
+                }
+            }
+            break;
+        }
 
         // Storing stuff
-        case 0x3c: case 0x4c: locals[1] = pop(); break; // istore_1, astore_1
-        case 0x3d: case 0x4d: locals[2] = pop(); break; // istore_2, astore_2
-        case 0x3e: case 0x4e: locals[3] = pop(); break; // istore_3, astore_3
+        case 0x3c: case 0x44: case 0x4c: locals[1] = pop(); break; // istore_1, fstore_1, astore_1
+        case 0x3d: case 0x45: case 0x4d: locals[2] = pop(); break; // istore_2, fstore_2, astore_2
+        case 0x3e: case 0x46: case 0x4e: locals[3] = pop(); break; // istore_3, fstore_3, astore_3
 
         // Arith
         case 0x60: push((int)(pop_i() + pop_i())); break; // iadd
@@ -47,14 +65,33 @@ std::variant<int32_t, int64_t, float, double, Object*> Frame::execute()  {
         case 0xac: pigeon_assert(return_value == 'I'); return (int32_t)pop_i(); // iret
 
         // Branches
-        case 0x9c: { // ifge
+        // ifne
+        case 0x9a: {
+            uint16_t offset = (method.code.code[ip + 1] << 8) | method.code.code[ip + 2];
+            ip += 2;
+            int comp = pop_i();
+            if(comp <= 0) { ip += offset; ip -= 3; }
+            break;
+        }
+        // ifeq
+        case 0x99: {
+            uint16_t offset = (method.code.code[ip + 1] << 8) | method.code.code[ip + 2];
+            ip += 2;
+            int comp = pop_i();
+            if(comp == 0) { ip += offset; ip -= 3; }
+            break;
+            break;
+        }
+        // ifge
+        case 0x9c: {
             uint16_t offset = (method.code.code[ip + 1] << 8) | method.code.code[ip + 2];
             ip += 2;
             int comp = pop_i();
             if(comp >= 0) { ip += offset; ip -= 3; }
             break;
         }
-        case 0xa1: { // if_icmplt
+        // if_icmplt
+        case 0xa1: {
             uint16_t offset = (method.code.code[ip + 1] << 8) | method.code.code[ip + 2];
             ip += 2;
             dumpStack();
@@ -63,10 +100,20 @@ std::variant<int32_t, int64_t, float, double, Object*> Frame::execute()  {
             if(comp1 < comp2) { ip += offset; ip -= 3; }
             break;
         }
-        case 0xa7: { // goto
+        // goto
+        case 0xa7: {
             uint16_t offset = (method.code.code[ip + 1] << 8) | method.code.code[ip + 2];
             ip += offset; ip -= 3;
             break;
+        }
+        // fcmpg
+        case 0x95: {
+            float comp2 = pop_f();
+            float comp1 = pop_f();
+            if(std::isnan(comp1) || std::isnan(comp2)) { push((int)1); break; }
+            else if(comp1 > comp2) { push((int)1); break; }
+            else if(comp1 == comp2) { push((int)0); break; }
+            else { push((int)-1); break; }
         }
 
         // Invokes
@@ -86,10 +133,11 @@ std::variant<int32_t, int64_t, float, double, Object*> Frame::execute()  {
             for(size_t i = 0; i < argument_count; i++) { arguments.push_back(pop()); }
             Object* obj = std::get<Object*>(pop().value);
             // Execute function and get return value, if any
-            std::variant<int32_t, int64_t, float, double, Object*> virt_ret = JRE::the().executeVirtual(obj, class_name + "." + function_name, function_descriptor, arguments);
+            std::variant<int32_t, int64_t, float, double, Object*> static_ret = thread->invoke(class_name + "." + function_name, function_descriptor, arguments, obj);
+            // If the function returns a value, add it to the stack
             if(function_descriptor[function_descriptor.size() - 1] != 'V') {
                 StackEntry e;
-                e.value = virt_ret;
+                e.value = static_ret;
                 push(e);
             }
             std::cout << "Function " << class_name << "." << function_name << "returned\n";
@@ -109,8 +157,13 @@ std::variant<int32_t, int64_t, float, double, Object*> Frame::execute()  {
             std::string function_name = method.method_class->readAndVerifyCPEntry(method.method_class->readAndVerifyCPEntry(method_reference.NameAndTypeDescriptor, CPTag::NameAndTypeDescriptor).NameStringIndex, CPTag::UTF8).string;
             std::string function_descriptor = method.method_class->readAndVerifyCPEntry(method.method_class->readAndVerifyCPEntry(method_reference.NameAndTypeDescriptor, CPTag::NameAndTypeDescriptor).TypeStringIndex, CPTag::UTF8).string;
             if(class_name == "java/lang/Object") { break; }
-            JRE::the().executeVirtual(obj, class_name + "." + function_name, function_descriptor, arguments);
-            break;
+            std::variant<int32_t, int64_t, float, double, Object*> static_ret = thread->invoke(class_name + "." + function_name, function_descriptor, arguments, obj);
+            // If the function returns a value, add it to the stack
+            if(function_descriptor[function_descriptor.size() - 1] != 'V') {
+                StackEntry e;
+                e.value = static_ret;
+                push(e);
+            }break;
         }
         case 0xb8: { // invokestatic
             uint16_t index = (method.code.code[ip + 1] << 8) | method.code.code[ip + 2];
@@ -125,7 +178,8 @@ std::variant<int32_t, int64_t, float, double, Object*> Frame::execute()  {
             size_t argument_count = JRE::the().argC(function_descriptor);
             if(argument_count) { arguments.insert(arguments.end(), stack.end() - argument_count, stack.end()); stack.resize(stack.size() - argument_count); };
             if(class_name == "java/lang/Object") { break; }
-            std::variant<int32_t, int64_t, float, double, Object*> static_ret = JRE::the().executeStatic(class_name + "." + function_name, function_descriptor, arguments);
+            std::variant<int32_t, int64_t, float, double, Object*> static_ret = thread->invoke(class_name + "." + function_name, function_descriptor, arguments, NULL);
+            std::cout << "stack size: " << stack.size() << "\n";
             // If the function returns a value, add it to the stack
             if(function_descriptor[function_descriptor.size() - 1] != 'V') {
                 StackEntry e;
@@ -203,7 +257,7 @@ std::variant<int32_t, int64_t, float, double, Object*> Frame::execute()  {
 void Frame::dumpStack() {
     pigeon_log("Frame", "Current Stack:");
     if(stack.size() == 0) { std::cout << "(empty)"; return; }
-    for(int i = stack.size() - 1; i >= 0; i--) {
+    for(int i = (int)stack.size() - 1; i >= 0; i--) {
         StackEntry& e = stack[i];
         if(e.isObjectReference) {
             pigeon_log("Frame", i << ": " << "[Reference]");

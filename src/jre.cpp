@@ -1,8 +1,8 @@
 ﻿#include <cstdarg>
 #include <sys/stat.h>
 #include <linux/limits.h>
-#include "jre.h"
-#include "frame.h"
+#include <jre.h>
+#include <frame.h>
 
 JRE::JRE() {
 
@@ -105,6 +105,7 @@ void JRE::addClass(std::string name) {
         // We can now add the class
         addClassFromData(file_data);
         pigeon_log("JRE", "Added class from zip file: " << file_name);
+        zip_fclose(file_in_zip);
         return;
     }
     pigeon_panic("addClass() failed");
@@ -122,34 +123,11 @@ Class *JRE::findClass(std::string name, bool recursed) {
     return *ret;
 }
 
-std::variant<int32_t, int64_t, float, double, Object *> JRE::executeStatic(const std::string name, std::string descriptor, std::vector<Frame::StackEntry> arguments) {
+bool JRE::isMethodStatic(std::string name, std::string descriptor) {
     std::string class_name = name.substr(0, name.find_first_of('.'));
     std::string function_name = name.substr(name.find_first_of('.') + 1);
-    pigeon_log("JRE", "Calling static function " << function_name << ", from class " << class_name << "; full ID " << name);
 
     Class* c = findClass(class_name);
     Method& m = c->findMethod(function_name, descriptor);
-    pigeon_assert(m.access_flags & Method::AccessFlags::Static);
-    Frame f(m, NULL, arguments);
-
-    return f.execute();
-}
-
-std::variant<int32_t, int64_t, float, double, Object*> JRE::executeVirtual(Object* object, const std::string name,std::string descriptor, std::vector<Frame::StackEntry> arguments) {
-    std::string class_name = name.substr(0, name.find_first_of('.'));
-    std::string function_name = name.substr(name.find_first_of('.') + 1);
-    pigeon_log("JRE", "Calling virtual function " << function_name << ", from class " << class_name << "; full ID " << name);
-    pigeon_log("JRE", "Object class name: " << object->class_->name << "\n");
-
-    Class* c = findClass(class_name);
-    Method& m = c->findMethod(function_name, descriptor);
-    if(m.access_flags & Method::AccessFlags::Native) {
-        std::cout << "TODO: attempted to call function marked native " << name << "\n";
-        pigeon_panic("TODO");
-    }
-    Frame f(m, object, arguments);
-
-    std::variant<int32_t, int64_t, float, double, Object*> ret = f.execute();
-    pigeon_log("JRE", "Done executing " << class_name << "." << function_name);
-    return ret;
+    return m.access_flags & Method::AccessFlags::Static;
 }

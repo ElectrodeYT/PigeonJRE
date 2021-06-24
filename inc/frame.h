@@ -13,6 +13,10 @@ struct Object {
 
 // A Java frame.
 // This actually executes the bytecode
+
+// Forward declaration
+class Thread;
+
 class Frame {
 public:
     struct StackEntry {
@@ -21,7 +25,7 @@ public:
         std::vector<Object*> value_list = {};
     };
 
-    Frame(const Method m, Object* this_, std::vector<StackEntry> args) : method(m) {
+    Frame(const Method m, Object* this_, std::vector<StackEntry> args, Thread* t) : method(m), thread(t) {
         stack.reserve(method.code.max_stack);
         locals.reserve(method.code.max_locals);
         if(this_) {
@@ -44,32 +48,43 @@ private:
     std::vector<StackEntry> stack;
     std::vector<StackEntry> locals;
 
-    void push(StackEntry e) {
+    inline void push(StackEntry e) {
         stack.push_back(e);
     }
 
-    void push(int a) {
+    inline void push(int a) {
         StackEntry e;
         e.value = a;
         stack.push_back(e);
     }
 
-    void push(Object* obj) {
+    inline void push(float f) {
+        StackEntry e;
+        e.value = (float)f;
+        stack.push_back(e);
+    }
+
+    inline void push(Object* obj) {
         StackEntry e;
         e.value = obj;
         e.isObjectReference = true;
         stack.push_back(e);
     }
 
-    StackEntry pop() {
+    inline StackEntry pop() {
         StackEntry e = stack[stack.size() - 1];
         stack.pop_back();
         return e;
     }
 
-    int pop_i() {
+    inline int pop_i() {
         StackEntry e = pop();
         return std::get<int>(e.value);
+    }
+
+    inline float pop_f() {
+        StackEntry e = pop();
+        return std::get<float>(e.value);
     }
 
     void dumpStack();
@@ -77,5 +92,6 @@ private:
     char return_value = 0;
 
     const Method method;
+    Thread *thread;
 };
 

@@ -18,6 +18,15 @@ public:
         return jre;
     }
 
+    ~JRE() {
+        for(size_t i = 0; i < classes.size(); i++) {
+            delete classes[i];
+        }
+        for(size_t i = 0; i < jar_files.size(); i++) {
+            zip_close(jar_files[0]);
+        }
+    }
+
     // Add a class path
     void addClassPath(const std::string path);
 
@@ -30,10 +39,6 @@ public:
     // Name should be in internal format
     // If it cannot be found, it will be loaded
     Class* findClass(std::string name, bool recursed = false);
-
-    // Function should be in "internal format"."function name"
-    std::variant<int32_t, int64_t, float, double, Object*> executeStatic(const std::string name, std::string descriptor, std::vector<Frame::StackEntry> arguments);
-    std::variant<int32_t, int64_t, float, double, Object*> executeVirtual(Object* object, const std::string name, std::string descriptor, std::vector<Frame::StackEntry> arguments);
 
     size_t argC(std::string descriptor) {
         char* p = (char*)(descriptor.c_str() + 1);
@@ -66,6 +71,8 @@ public:
         objects.push_back(new_object);
         return new_object;
     }
+
+    bool isMethodStatic(std::string name, std::string descriptor);
 
 private:
     // Classes
