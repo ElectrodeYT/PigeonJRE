@@ -1,3 +1,0 @@
-/home/alexander/projects/PigeonJRE/cmake-build-debug/CMakeFiles/rebuild_cache.dir
-/home/alexander/projects/PigeonJRE/cmake-build-debug/CMakeFiles/edit_cache.dir
-/home/alexander/projects/PigeonJRE/cmake-build-debug/CMakeFiles/PigeonJRE.dir
